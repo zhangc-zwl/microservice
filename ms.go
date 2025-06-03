@@ -2,10 +2,11 @@ package microservice
 
 import (
 	"fmt"
-	"github.com/zhangc-zwl/microservice/render"
 	"html/template"
 	"log"
 	"net/http"
+
+	"github.com/zhangc-zwl/microservice/render"
 )
 
 const ANY = "ANY"
@@ -124,8 +125,8 @@ func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
 	e.funcMap = funcMap
 }
 
-// LoadTemplateGlob 加载所有模板
-func (e *Engine) LoadTemplateGlob(pattern string) {
+// LoadTemplate 加载所有模板
+func (e *Engine) LoadTemplate(pattern string) {
 	t := template.Must(template.New("").Funcs(e.funcMap).ParseGlob(pattern))
 	e.SetHtmlTemplate(t)
 }

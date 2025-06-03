@@ -3,9 +3,12 @@ package microservice
 import (
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
+	"unicode"
 )
 
 type Context struct {
@@ -23,10 +26,9 @@ func (c *Context) HTML(status int, html string) {
 	}
 }
 
-func (c *Context) HTMLTemplate(name string, funcMap template.FuncMap, data any, fileName ...string) {
+func (c *Context) HTMLTemplate(name string, data any, fileName ...string) (err error) {
 	t := template.New(name)
-	t.Funcs(funcMap)
-	t, err := t.ParseFiles(fileName...)
+	t, err = t.ParseFiles(fileName...)
 	if err != nil {
 		log.Println(err)
 		return
@@ -36,12 +38,12 @@ func (c *Context) HTMLTemplate(name string, funcMap template.FuncMap, data any, 
 	if err != nil {
 		log.Println(err)
 	}
+	return
 }
 
-func (c *Context) HTMLTemplateGlob(name string, funcMap template.FuncMap, pattern string, data any) {
+func (c *Context) HTMLTemplateGlob(name string, pattern string, data any) (err error) {
 	t := template.New(name)
-	t.Funcs(funcMap)
-	t, err := t.ParseGlob(pattern)
+	t, err = t.ParseGlob(pattern)
 	if err != nil {
 		log.Println(err)
 		return
@@ -51,6 +53,7 @@ func (c *Context) HTMLTemplateGlob(name string, funcMap template.FuncMap, patter
 	if err != nil {
 		log.Println(err)
 	}
+	return
 }
 
 func (c *Context) Template(name string, data any) error {
@@ -86,4 +89,43 @@ func (c *Context) XML(status int, data any) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Context) File(fileName string) {
+	http.ServeFile(c.W, c.R, fileName)
+}
+
+func (c *Context) FileAttachment(filepath, filename string) {
+	if isASCII(filename) {
+		c.W.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	} else {
+		c.W.Header().Set("Content-Disposition", `attachment; filename*=UTF-8''`+url.QueryEscape(filename))
+	}
+	http.ServeFile(c.W, c.R, filepath)
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Context) FileFromFS(filepath string, fs http.FileSystem) {
+	defer func(old string) {
+		c.R.URL.Path = old
+	}(c.R.URL.Path)
+
+	c.R.URL.Path = filepath
+
+	http.FileServer(fs).ServeHTTP(c.W, c.R)
+}
+
+func (c *Context) Redirect(status int, url string) {
+	if (status < http.StatusMultipleChoices || status > http.StatusPermanentRedirect) && status != http.StatusCreated {
+		panic(fmt.Sprintf("Cannot redirect with status code %d", status))
+	}
+	http.Redirect(c.W, c.R, url, status)
 }
