@@ -2,6 +2,8 @@ package microservice
 
 import (
 	"fmt"
+	"github.com/zhangc-zwl/microservice/render"
+	"html/template"
 	"log"
 	"net/http"
 )
@@ -108,12 +110,28 @@ func (r *routerGroup) Head(name string, handlerFunc HandlerFunc, middleFunc ...M
 
 type Engine struct {
 	router
+	funcMap    template.FuncMap
+	HTMLRender render.HTMLRender
 }
 
 func New() *Engine {
 	return &Engine{
-		router{},
+		router: router{},
 	}
+}
+
+func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
+	e.funcMap = funcMap
+}
+
+// LoadTemplateGlob 加载所有模板
+func (e *Engine) LoadTemplateGlob(pattern string) {
+	t := template.Must(template.New("").Funcs(e.funcMap).ParseGlob(pattern))
+	e.SetHtmlTemplate(t)
+}
+
+func (e *Engine) SetHtmlTemplate(t *template.Template) {
+	e.HTMLRender = render.HTMLRender{Template: t}
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -127,8 +145,9 @@ func (e *Engine) httpRequestHandler(w http.ResponseWriter, r *http.Request) {
 		node := group.treeNode.Get(routerName)
 		if node != nil && node.isEndNode {
 			ctx := &Context{
-				w,
-				r,
+				W:     w,
+				R:     r,
+				engin: e,
 			}
 			if handle, ok := group.handlerFuncMap[node.routerName][ANY]; ok {
 				group.methodHandle(node.routerName, ANY, handle, ctx)
