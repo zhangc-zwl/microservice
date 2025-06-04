@@ -14,8 +14,9 @@ func (j JSON) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, "application/json; charset=utf-8")
 }
 
-func (j JSON) Render(w http.ResponseWriter) (err error) {
+func (j JSON) Render(w http.ResponseWriter, code int) (err error) {
 	j.WriteContentType(w)
+	w.WriteHeader(code)
 	rsp, err := json.Marshal(j.Data)
 	if err != nil {
 		log.Println("json marshal error:", err)

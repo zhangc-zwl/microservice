@@ -1,6 +1,7 @@
 package microservice
 
 import (
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -10,15 +11,18 @@ import (
 	"github.com/zhangc-zwl/microservice/render"
 )
 
+const defaultMultipartMemory = 32 << 20 //32M
+
 type Context struct {
 	W          http.ResponseWriter
 	R          *http.Request
 	engin      *Engine
 	queryCache url.Values
+	formCache  url.Values
 }
 
 func (c *Context) HTML(status int, html string) (err error) {
-	return c.Render(render.HTML{
+	return c.Render(status, render.HTML{
 		Data:       html,
 		IsTemplate: false,
 	})
@@ -55,7 +59,7 @@ func (c *Context) HTMLTemplateGlob(name string, pattern string, data any) (err e
 }
 
 func (c *Context) Template(name string, data any) error {
-	return c.Render(render.HTML{
+	return c.Render(http.StatusOK, render.HTML{
 		Data:       data,
 		Name:       name,
 		Template:   c.engin.HTMLRender.Template,
@@ -64,13 +68,13 @@ func (c *Context) Template(name string, data any) error {
 }
 
 func (c *Context) JSON(status int, data any) error {
-	return c.Render(render.JSON{
+	return c.Render(status, render.JSON{
 		Data: data,
 	})
 }
 
 func (c *Context) XML(status int, data any) error {
-	return c.Render(render.XML{
+	return c.Render(status, render.XML{
 		Data: data,
 	})
 }
@@ -99,7 +103,7 @@ func (c *Context) FileFromFS(filepath string, fs http.FileSystem) {
 }
 
 func (c *Context) Redirect(status int, url string) {
-	c.Render(render.Redirect{
+	c.Render(status, render.Redirect{
 		Code:     status,
 		Request:  c.R,
 		Location: url,
@@ -107,14 +111,14 @@ func (c *Context) Redirect(status int, url string) {
 }
 
 func (c *Context) String(status int, format string, values ...any) (err error) {
-	return c.Render(render.String{
+	return c.Render(status, render.String{
 		Format: format,
 		Data:   values,
 	})
 }
 
-func (c *Context) Render(r render.Render) error {
-	err := r.Render(c.W)
+func (c *Context) Render(status int, r render.Render) error {
+	err := r.Render(c.W, status)
 	return err
 }
 
@@ -174,4 +178,45 @@ func (c *Context) get(m map[string][]string, key string) (map[string]string, boo
 		}
 	}
 	return dict, exist
+}
+
+func (c *Context) initPostFormCache() {
+	if c.R != nil {
+		if err := c.R.ParseMultipartForm(defaultMultipartMemory); err != nil {
+			if !errors.Is(err, http.ErrNotMultipart) {
+				log.Println(err)
+			}
+		}
+		c.formCache = c.R.PostForm
+	} else {
+		c.formCache = url.Values{}
+	}
+}
+
+func (c *Context) GetPostForm(key string) (string, bool) {
+	if values, ok := c.GetPostFormArray(key); ok {
+		return values[0], ok
+	}
+	return "", false
+}
+
+func (c *Context) PostFormArray(key string) (values []string) {
+	values, _ = c.GetPostFormArray(key)
+	return
+}
+
+func (c *Context) GetPostFormArray(key string) (values []string, ok bool) {
+	c.initPostFormCache()
+	values, ok = c.formCache[key]
+	return
+}
+
+func (c *Context) GetPostFormMap(key string) (map[string]string, bool) {
+	c.initPostFormCache()
+	return c.get(c.formCache, key)
+}
+
+func (c *Context) PostFormMap(key string) (dict map[string]string) {
+	dict, _ = c.GetPostFormMap(key)
+	return
 }

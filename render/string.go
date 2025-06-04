@@ -17,8 +17,9 @@ func (s String) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, "text/plain; charset=utf-8")
 }
 
-func (s String) Render(w http.ResponseWriter) (err error) {
+func (s String) Render(w http.ResponseWriter, code int) (err error) {
 	s.WriteContentType(w)
+	w.WriteHeader(code)
 	if len(s.Data) > 0 {
 		_, err = fmt.Fprintf(w, s.Format, s.Data...)
 		return

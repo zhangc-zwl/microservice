@@ -21,8 +21,9 @@ func (h HTML) WriteContentType(w http.ResponseWriter) {
 	writeContentType(w, "text/html; charset=utf-8")
 }
 
-func (h HTML) Render(w http.ResponseWriter) (err error) {
+func (h HTML) Render(w http.ResponseWriter, code int) (err error) {
 	h.WriteContentType(w)
+	w.WriteHeader(code)
 	if h.IsTemplate {
 		err = h.Template.ExecuteTemplate(w, h.Name, h.Data)
 	} else {
