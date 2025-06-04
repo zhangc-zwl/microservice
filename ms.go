@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/zhangc-zwl/microservice/render"
 )
@@ -113,12 +114,21 @@ type Engine struct {
 	router
 	funcMap    template.FuncMap
 	HTMLRender render.HTMLRender
+	pool       sync.Pool
 }
 
 func New() *Engine {
-	return &Engine{
+	engine := &Engine{
 		router: router{},
 	}
+	engine.pool.New = func() any {
+		return engine.allocateContext()
+	}
+	return engine
+}
+
+func (e *Engine) allocateContext() any {
+	return &Context{engin: e}
 }
 
 func (e *Engine) SetFuncMap(funcMap template.FuncMap) {
@@ -136,20 +146,19 @@ func (e *Engine) SetHtmlTemplate(t *template.Template) {
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	e.httpRequestHandler(w, r)
+	ctx := e.pool.Get().(*Context)
+	ctx.W = w
+	ctx.R = r
+	e.httpRequestHandler(ctx, w, r)
+	e.pool.Put(ctx) // 将ctx放回池中
 }
 
-func (e *Engine) httpRequestHandler(w http.ResponseWriter, r *http.Request) {
+func (e *Engine) httpRequestHandler(ctx *Context, w http.ResponseWriter, r *http.Request) {
 	method := r.Method
 	for _, group := range e.routerGroups {
 		routerName := SubStringLast(r.RequestURI, "/"+group.name)
 		node := group.treeNode.Get(routerName)
 		if node != nil && node.isEndNode {
-			ctx := &Context{
-				W:     w,
-				R:     r,
-				engin: e,
-			}
 			if handle, ok := group.handlerFuncMap[node.routerName][ANY]; ok {
 				group.methodHandle(node.routerName, ANY, handle, ctx)
 				return

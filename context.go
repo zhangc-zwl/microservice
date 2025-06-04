@@ -1,14 +1,12 @@
 package microservice
 
 import (
-	"encoding/json"
-	"encoding/xml"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"net/url"
-	"unicode"
+
+	"github.com/zhangc-zwl/microservice/render"
 )
 
 type Context struct {
@@ -17,13 +15,11 @@ type Context struct {
 	engin *Engine
 }
 
-func (c *Context) HTML(status int, html string) {
-	c.W.WriteHeader(status)
-	c.W.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, err := c.W.Write([]byte(html))
-	if err != nil {
-		log.Println(err)
-	}
+func (c *Context) HTML(status int, html string) (err error) {
+	return c.Render(status, render.HTML{
+		Data:       html,
+		IsTemplate: false,
+	})
 }
 
 func (c *Context) HTMLTemplate(name string, data any, fileName ...string) (err error) {
@@ -57,38 +53,24 @@ func (c *Context) HTMLTemplateGlob(name string, pattern string, data any) (err e
 }
 
 func (c *Context) Template(name string, data any) error {
-	c.W.Header().Set("Content-Type", "text/html; charset=utf-8")
-	template := c.engin.HTMLRender.Template
-	err := template.ExecuteTemplate(c.W, name, data)
-	if err != nil {
-		log.Println(err)
-	}
-	return err
+	return c.Render(http.StatusOK, render.HTML{
+		Data:       data,
+		Name:       name,
+		Template:   c.engin.HTMLRender.Template,
+		IsTemplate: true,
+	})
 }
 
 func (c *Context) JSON(status int, data any) error {
-	c.W.Header().Set("Content-Type", "application/json; charset=utf-8")
-	c.W.WriteHeader(status)
-	rsp, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	_, err = c.W.Write(rsp)
-	if err != nil {
-		return err
-	}
-	return nil
+	return c.Render(status, render.JSON{
+		Data: data,
+	})
 }
 
 func (c *Context) XML(status int, data any) error {
-	header := c.W.Header()
-	header["Content-Type"] = []string{"application/xml; charset=utf-8"}
-	c.W.WriteHeader(status)
-	err := xml.NewEncoder(c.W).Encode(data)
-	if err != nil {
-		return err
-	}
-	return nil
+	return c.Render(status, render.XML{
+		Data: data,
+	})
 }
 
 func (c *Context) File(fileName string) {
@@ -104,15 +86,6 @@ func (c *Context) FileAttachment(filepath, filename string) {
 	http.ServeFile(c.W, c.R, filepath)
 }
 
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] > unicode.MaxASCII {
-			return false
-		}
-	}
-	return true
-}
-
 func (c *Context) FileFromFS(filepath string, fs http.FileSystem) {
 	defer func(old string) {
 		c.R.URL.Path = old
@@ -124,8 +97,22 @@ func (c *Context) FileFromFS(filepath string, fs http.FileSystem) {
 }
 
 func (c *Context) Redirect(status int, url string) {
-	if (status < http.StatusMultipleChoices || status > http.StatusPermanentRedirect) && status != http.StatusCreated {
-		panic(fmt.Sprintf("Cannot redirect with status code %d", status))
-	}
-	http.Redirect(c.W, c.R, url, status)
+	c.Render(status, render.Redirect{
+		Code:     status,
+		Request:  c.R,
+		Location: url,
+	})
+}
+
+func (c *Context) String(status int, format string, values ...any) (err error) {
+	return c.Render(status, render.String{
+		Format: format,
+		Data:   values,
+	})
+}
+
+func (c *Context) Render(code int, r render.Render) error {
+	err := r.Render(c.W)
+	c.W.WriteHeader(code)
+	return err
 }
