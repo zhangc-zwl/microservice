@@ -5,18 +5,20 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/zhangc-zwl/microservice/render"
 )
 
 type Context struct {
-	W     http.ResponseWriter
-	R     *http.Request
-	engin *Engine
+	W          http.ResponseWriter
+	R          *http.Request
+	engin      *Engine
+	queryCache url.Values
 }
 
 func (c *Context) HTML(status int, html string) (err error) {
-	return c.Render(status, render.HTML{
+	return c.Render(render.HTML{
 		Data:       html,
 		IsTemplate: false,
 	})
@@ -53,7 +55,7 @@ func (c *Context) HTMLTemplateGlob(name string, pattern string, data any) (err e
 }
 
 func (c *Context) Template(name string, data any) error {
-	return c.Render(http.StatusOK, render.HTML{
+	return c.Render(render.HTML{
 		Data:       data,
 		Name:       name,
 		Template:   c.engin.HTMLRender.Template,
@@ -62,13 +64,13 @@ func (c *Context) Template(name string, data any) error {
 }
 
 func (c *Context) JSON(status int, data any) error {
-	return c.Render(status, render.JSON{
+	return c.Render(render.JSON{
 		Data: data,
 	})
 }
 
 func (c *Context) XML(status int, data any) error {
-	return c.Render(status, render.XML{
+	return c.Render(render.XML{
 		Data: data,
 	})
 }
@@ -97,7 +99,7 @@ func (c *Context) FileFromFS(filepath string, fs http.FileSystem) {
 }
 
 func (c *Context) Redirect(status int, url string) {
-	c.Render(status, render.Redirect{
+	c.Render(render.Redirect{
 		Code:     status,
 		Request:  c.R,
 		Location: url,
@@ -105,14 +107,71 @@ func (c *Context) Redirect(status int, url string) {
 }
 
 func (c *Context) String(status int, format string, values ...any) (err error) {
-	return c.Render(status, render.String{
+	return c.Render(render.String{
 		Format: format,
 		Data:   values,
 	})
 }
 
-func (c *Context) Render(code int, r render.Render) error {
+func (c *Context) Render(r render.Render) error {
 	err := r.Render(c.W)
-	c.W.WriteHeader(code)
 	return err
+}
+
+func (c *Context) DefaultQuery(key, defaultValue string) string {
+	array, ok := c.GetQueryArray(key)
+	if !ok {
+		return defaultValue
+	}
+	return array[0]
+}
+
+func (c *Context) GetQuery(key string) string {
+	c.initQueryCache()
+	return c.queryCache.Get(key)
+}
+
+func (c *Context) QueryArray(key string) (values []string) {
+	c.initQueryCache()
+	values, _ = c.queryCache[key]
+	return
+}
+
+func (c *Context) GetQueryArray(key string) (values []string, ok bool) {
+	c.initQueryCache()
+	values, ok = c.queryCache[key]
+	return
+}
+
+func (c *Context) initQueryCache() {
+	if c.R != nil {
+		c.queryCache = c.R.URL.Query()
+	} else {
+		c.queryCache = url.Values{}
+	}
+}
+
+func (c *Context) QueryMap(key string) (dict map[string]string) {
+	dict, _ = c.GetQueryMap(key)
+	return
+}
+
+func (c *Context) GetQueryMap(key string) (map[string]string, bool) {
+	c.initQueryCache()
+	return c.get(c.queryCache, key)
+}
+
+func (c *Context) get(m map[string][]string, key string) (map[string]string, bool) {
+	//user[id]=1&user[name]=张三
+	dict := make(map[string]string)
+	exist := false
+	for k, value := range m {
+		if i := strings.IndexByte(k, '['); i >= 1 && k[0:i] == key {
+			if j := strings.IndexByte(k[i+1:], ']'); j >= 1 {
+				exist = true
+				dict[k[i+1:][:j]] = value[0]
+			}
+		}
+	}
+	return dict, exist
 }
