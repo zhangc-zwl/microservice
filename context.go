@@ -1,11 +1,15 @@
 package microservice
 
 import (
+	"encoding/json"
 	"errors"
 	"html/template"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/zhangc-zwl/microservice/render"
@@ -219,4 +223,59 @@ func (c *Context) GetPostFormMap(key string) (map[string]string, bool) {
 func (c *Context) PostFormMap(key string) (dict map[string]string) {
 	dict, _ = c.GetPostFormMap(key)
 	return
+}
+
+func (c *Context) FormFile(name string) (*multipart.FileHeader, error) {
+	req := c.R
+	if err := req.ParseMultipartForm(defaultMultipartMemory); err != nil {
+		return nil, err
+	}
+	file, header, err := req.FormFile(name)
+	if err != nil {
+		return nil, err
+	}
+	err = file.Close()
+	if err != nil {
+		return nil, err
+	}
+	return header, nil
+}
+
+func (c *Context) FormFiles(name string) []*multipart.FileHeader {
+	multipartForm, err := c.MultipartForm()
+	if err != nil {
+		return make([]*multipart.FileHeader, 0)
+	}
+	return multipartForm.File[name]
+}
+
+func (c *Context) SaveUploadedFile(file *multipart.FileHeader, dst string) error {
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, src)
+	return err
+}
+
+func (c *Context) MultipartForm() (*multipart.Form, error) {
+	err := c.R.ParseMultipartForm(defaultMultipartMemory)
+	return c.R.MultipartForm, err
+}
+
+func (c *Context) DealJson(data any) error {
+	body := c.R.Body
+	if c.R == nil || body == nil {
+		return errors.New("invalid request")
+	}
+	decoder := json.NewDecoder(body)
+	return decoder.Decode(data)
 }
